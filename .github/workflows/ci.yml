@@ -1,0 +1,117 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# Nothing by default; every job asks for exactly what it needs.
+permissions: {}
+
+jobs:
+  go:
+    name: Format, vet, test, build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
+        with:
+          go-version-file: go.mod
+      - name: gofmt
+        run: |
+          unformatted="$(gofmt -l .)"
+          if [ -n "$unformatted" ]; then echo "Not gofmt-formatted:"; echo "$unformatted"; exit 1; fi
+      - run: go vet ./...
+      # Includes the end-to-end tests on temporary git repositories and the action.yml check.
+      - run: go test -race ./...
+      - run: go build ./cmd/pr-code-stats
+
+  security:
+    name: Vulnerabilities and static security analysis
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
+        with:
+          go-version-file: go.mod
+      # Source mode follows the call graph; the standard library of the pinned toolchain counts too.
+      - run: go install golang.org/x/vuln/cmd/govulncheck@v1.10.0 && govulncheck ./...
+      # Reviewed exceptions are annotated in the code with #nosec and a reason.
+      - run: go install github.com/securego/gosec/v2/cmd/gosec@v2.30.0 && gosec -quiet ./...
+
+  workflows:
+    name: Lint workflows
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
+        with:
+          go-version-file: go.mod
+      - run: go install github.com/rhysd/actionlint/cmd/actionlint@v1.7.12 && actionlint
+      # Offline audits only: the online ones need a token this job does not have.
+      - run: pipx run zizmor==1.33.1 --no-online-audits --min-severity medium .
+
+  docker:
+    name: Build and scan image
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - run: docker build --tag pr-code-stats:ci .
+      - name: Scan the image (fixed HIGH/CRITICAL findings fail the build)
+        run: |
+          docker save pr-code-stats:ci --output "$RUNNER_TEMP/image.tar"
+          docker run --rm -v "$RUNNER_TEMP:/scan" \
+            aquasec/trivy@sha256:8f6bb947dbc528902e11f2f5be52f7b519f6a39d5d148f41166f2040499768fb \
+            image --input /scan/image.tar --severity HIGH,CRITICAL --ignore-unfixed --exit-code 1
+
+  integration:
+    name: Docker integration tests
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
+        with:
+          go-version-file: go.mod
+      # Builds the image and runs it the way the Actions runner does (root, mounted workspace, INPUT_* env).
+      - run: go test -tags integration -count=1 -v ./itest/
+
+  # Runs the action from this very checkout on the pull request itself. Only for branches of this
+  # repository: the job hands a token with write access to code taken from the pull request,
+  # which for a fork would be the fork author's code (that token is read-only there anyway).
+  self-test:
+    name: Run the action on this PR
+    if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: ./
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          base-sha: ${{ github.event.pull_request.base.sha }}
+          head-sha: ${{ github.event.pull_request.head.sha }}

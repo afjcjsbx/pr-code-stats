@@ -1,0 +1,51 @@
+name: PR Code Stats
+description: Comments on a pull request how many lines were added and removed, split into production code, tests, comments and other.
+author: afjcjsbx
+branding:
+  icon: bar-chart-2
+  color: blue
+
+inputs:
+  github-token:
+    description: Token used to create or update the report comment. Required when `comment` is true.
+    required: false
+  base-sha:
+    description: SHA of the base commit of the pull request (github.event.pull_request.base.sha).
+    required: true
+  head-sha:
+    description: SHA of the head commit of the pull request (github.event.pull_request.head.sha).
+    required: true
+  comment:
+    description: Set to `false` to compute the statistics without publishing a comment.
+    required: false
+    default: 'true'
+  config:
+    description: Path of the configuration file. It is read from the base commit, not from the pull request.
+    required: false
+    default: '.github/pr-code-stats.yml'
+  fail-on-comment-error:
+    description: Fail the step if the comment cannot be created or updated (for example on pull requests from forks).
+    required: false
+    default: 'false'
+  write-step-summary:
+    description: Also write the report to the workflow run summary.
+    required: false
+    default: 'true'
+
+outputs:
+  added:
+    description: Total lines added.
+  removed:
+    description: Total lines removed.
+  net:
+    description: Lines added minus lines removed.
+  files-changed:
+    description: Changed files included in the report (excluded files are not counted).
+  comment-url:
+    description: URL of the created or updated comment, if any.
+  comment-status:
+    description: "`created`, `updated`, `skipped` (publishing failed or was not permitted) or `disabled`."
+
+runs:
+  using: docker
+  image: Dockerfile
