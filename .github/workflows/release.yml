@@ -38,7 +38,12 @@ jobs:
           TAG: ${{ github.ref_name }}
           SHA: ${{ github.sha }}
         run: |
-          gh release create "$TAG" --repo "$REPO" --verify-tag --generate-notes --title "$TAG"
+          # A release may have been created manually before pushing its tag.
+          if gh release view "$TAG" --repo "$REPO" >/dev/null 2>&1; then
+            echo "Release $TAG already exists; leaving it unchanged."
+          else
+            gh release create "$TAG" --repo "$REPO" --verify-tag --generate-notes --title "$TAG"
+          fi
           major="${TAG%%.*}"
           if gh api "repos/$REPO/git/ref/tags/$major" >/dev/null 2>&1; then
             gh api --method PATCH "repos/$REPO/git/refs/tags/$major" --field sha="$SHA" --field force=true
