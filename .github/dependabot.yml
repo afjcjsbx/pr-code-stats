@@ -1,0 +1,23 @@
+# Keeps the pinned SHAs and digests moving: Go modules, workflow actions and the base images.
+# The cooldown holds back versions published in the last week, so a hijacked release is
+# usually yanked before it reaches this repository.
+version: 2
+updates:
+  - package-ecosystem: gomod
+    directory: /
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+  - package-ecosystem: docker
+    directory: /
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7

@@ -1,0 +1,47 @@
+name: Release
+
+# Push a tag like v1.2.3: this publishes the GitHub release and moves the major tag (v1) to it.
+on:
+  push:
+    tags:
+      - 'v[0-9]+.[0-9]+.[0-9]+'
+
+permissions: {}
+
+jobs:
+  test:
+    name: Test the tagged commit
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read # no write token while repository code and dependencies run
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
+        with:
+          go-version-file: go.mod
+          cache: false # a release must not restore a cache written by another run
+      - run: go test ./...
+
+  release:
+    name: Publish
+    needs: test
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # the only job with write access; it checks out and runs no repository code
+    steps:
+      - name: Create the release and move the major tag
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          TAG: ${{ github.ref_name }}
+          SHA: ${{ github.sha }}
+        run: |
+          gh release create "$TAG" --repo "$REPO" --verify-tag --generate-notes --title "$TAG"
+          major="${TAG%%.*}"
+          if gh api "repos/$REPO/git/ref/tags/$major" >/dev/null 2>&1; then
+            gh api --method PATCH "repos/$REPO/git/refs/tags/$major" --field sha="$SHA" --field force=true
+          else
+            gh api --method POST "repos/$REPO/git/refs" --field ref="refs/tags/$major" --field sha="$SHA"
+          fi

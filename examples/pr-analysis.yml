@@ -1,0 +1,37 @@
+# Copy to .github/workflows/pr-code-stats.yml in the repository you want to measure.
+name: PR Code Statistics
+
+on:
+  pull_request:
+    types:
+      - opened
+      - synchronize
+      - reopened
+
+permissions:
+  contents: read
+  pull-requests: write
+
+concurrency:
+  group: pr-code-stats-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  analyze:
+    name: Analyze PR
+    runs-on: ubuntu-latest # Docker container actions need a Linux runner
+    timeout-minutes: 20 # your own backstop; the action stops itself after 15 minutes at most
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Analyze pull request
+        uses: afjcjsbx/pr-code-stats@v1
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          base-sha: ${{ github.event.pull_request.base.sha }}
+          head-sha: ${{ github.event.pull_request.head.sha }}
